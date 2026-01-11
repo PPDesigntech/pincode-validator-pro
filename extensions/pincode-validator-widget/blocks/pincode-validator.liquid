@@ -1,0 +1,207 @@
+<div class="pv-wrap"
+  data-pv-shop="{{ shop.permanent_domain }}"
+  data-pv-endpoint="{{ block.settings.endpoint_base | escape }}"
+>
+  {% if block.settings.title != blank %}
+    <p class="pv-title">{{ block.settings.title }}</p>
+  {% endif %}
+
+  <div class="pv-row">
+    <input
+      class="pv-input"
+      type="text"
+      inputmode="numeric"
+      maxlength="6"
+      placeholder="{{ block.settings.placeholder }}"
+      aria-label="Pincode"
+    />
+    <button class="pv-btn" type="button">{{ block.settings.button_text }}</button>
+  </div>
+
+  <div class="pv-result" role="status" aria-live="polite"></div>
+</div>
+
+<style>
+  .pv-wrap { padding: 12px 0; }
+  .pv-title { margin: 0 0 8px; font-weight: 600; }
+  .pv-row { display: flex; gap: 10px; align-items: center; }
+  .pv-input { flex: 1; padding: 10px 12px; border: 1px solid rgba(0,0,0,.2); border-radius: 10px; }
+  .pv-btn { padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(0,0,0,.2); cursor: pointer; background: #111; color: #fff; }
+  .pv-result { margin-top: 8px; font-size: 14px; }
+  .pv-ok { color: #0a7a32; }
+  .pv-bad { color: #b42318; }
+
+  .pv-atc-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style>
+
+<script>
+(function () {
+
+  const ATC_SELECTORS = [
+    'button[type="submit"][name="add"]',
+    'button[name="add"]',
+    'form[action*="/cart/add"] button[type="submit"]',
+    '.product-form__submit',
+  ];
+
+  function getATC() {
+    for (const sel of ATC_SELECTORS) {
+      const btn = document.querySelector(sel);
+      if (btn) return btn;
+    }
+    return null;
+  }
+
+  function disableATC(msg) {
+    const btn = getATC();
+    if (!btn) return;
+    btn.disabled = true;
+    btn.setAttribute("aria-disabled", "true");
+    btn.classList.add("pv-atc-disabled");
+    if (msg) btn.dataset.pvMsg = msg;
+  }
+
+  function enableATC() {
+    const btn = getATC();
+    if (!btn) return;
+    btn.disabled = false;
+    btn.removeAttribute("aria-disabled");
+    btn.classList.remove("pv-atc-disabled");
+    delete btn.dataset.pvMsg;
+  }
+
+  function init(wrap) {
+    if (!wrap || wrap.__pvInited) return;
+    wrap.__pvInited = true;
+
+    const shop = wrap.getAttribute("data-pv-shop");
+    let base = wrap.getAttribute("data-pv-endpoint") || "";
+
+    const input = wrap.querySelector(".pv-input");
+    const btn = wrap.querySelector(".pv-btn");
+    const out = wrap.querySelector(".pv-result");
+
+    base = base.replace(/\/+$/, "");
+
+    // Disable ATC initially
+    disableATC("Please check delivery availability");
+
+    function setMsg(text, ok) {
+      out.className = "pv-result " + (ok ? "pv-ok" : "pv-bad");
+      out.textContent = text;
+    }
+
+    async function check() {
+      const pincode = (input.value || "").trim();
+      localStorage.setItem("pv_last_pincode", pincode);
+
+      disableATC("Checking delivery...");
+
+      if (!/^\d{6}$/.test(pincode)) {
+        setMsg("Please enter a valid 6-digit pincode.", false);
+        disableATC("Invalid pincode");
+        return;
+      }
+
+      out.textContent = "Checking...";
+
+      try {
+        const url = `${base}/proxy/check?shop=${encodeURIComponent(shop)}&pincode=${encodeURIComponent(pincode)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.deliverable) {
+          const parts = [];
+          parts.push(data.message || "Delivery available.");
+
+          if (data.etaMinDays || data.etaMaxDays) {
+            parts.push(`ETA: ${data.etaMinDays}-${data.etaMaxDays} days`);
+          }
+
+          if (typeof data.codAvailable === "boolean") {
+            parts.push(`COD: ${data.codAvailable ? "Available" : "Not available"}`);
+          }
+
+          if (data.shippingFee != null) {
+            parts.push(`Shipping: ₹${data.shippingFee}`);
+          }
+
+          setMsg(parts.join(" • "), true);
+          enableATC();
+        } else {
+          setMsg(data.message || "Not deliverable for this pincode.", false);
+          disableATC("Not deliverable");
+        }
+
+      } catch (e) {
+        console.error("[PV]", e);
+        setMsg("Request failed. Please try again.", false);
+        disableATC("Check failed");
+      }
+    }
+
+    btn.addEventListener("click", check);
+
+    input.addEventListener("input", () => {
+      disableATC("Please re-check delivery");
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") check();
+    });
+
+    // Auto-check last pincode
+    const last = localStorage.getItem("pv_last_pincode");
+    if (last && /^\d{6}$/.test(last)) {
+      input.value = last;
+      setTimeout(check, 300);
+    }
+  }
+
+  function boot() {
+    document.querySelectorAll(".pv-wrap").forEach(init);
+  }
+
+  boot();
+  document.addEventListener("shopify:section:load", boot);
+
+})();
+</script>
+
+
+
+{% schema %}
+{
+  "name": "Pincode Validator",
+  "target": "section",
+  "settings": [
+    {
+  "type": "text",
+  "id": "endpoint_base",
+  "label": "Backend base URL (dev tunnel)",
+  "default": "https://example.com"
+},
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Check delivery availability"
+    },
+    {
+      "type": "text",
+      "id": "placeholder",
+      "label": "Placeholder",
+      "default": "Enter 6-digit pincode"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button text",
+      "default": "Check"
+    }
+  ]
+}
+{% endschema %}
