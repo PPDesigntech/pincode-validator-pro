@@ -1,18 +1,20 @@
-FROM node:20-alpine
-RUN apk add --no-cache openssl
-
-EXPOSE 3000
+FROM node:20-slim
 
 WORKDIR /app
 
-ENV NODE_ENV=production
+# Install dependencies
+COPY package*.json ./
+COPY prisma ./prisma
+RUN npm ci
 
-COPY package.json package-lock.json* ./
-
-RUN npm ci --omit=dev && npm cache clean --force
-
+# Copy rest of the app
 COPY . .
 
+# Build the app
 RUN npm run build
 
-CMD ["npm", "run", "docker-start"]
+# Expose port (Render uses PORT env)
+EXPOSE 3000
+
+# Start app
+CMD ["npm","run","docker-start"]
