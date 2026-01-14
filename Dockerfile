@@ -6,15 +6,19 @@ RUN apt-get update -y \
 
 WORKDIR /app
 
-ENV npm_config_omit=""
-ENV NPM_CONFIG_OMIT=""
+# IMPORTANT: make sure optional deps are not skipped
+ENV npm_config_optional=true
+ENV npm_config_omit=
+ENV NPM_CONFIG_OMIT=
 
 COPY package*.json ./
 COPY prisma ./prisma
+
+# clean install
 RUN npm ci
 
-# Only keep this if you *really* needed it for rollup native issues
-# RUN npm i -D @rollup/rollup-linux-x64-gnu || true
+# ✅ Force Rollup native binary install (DON'T ignore errors)
+RUN npm i -D @rollup/rollup-linux-x64-gnu
 
 COPY . .
 
@@ -22,5 +26,4 @@ RUN npx prisma generate
 RUN npm run build
 
 EXPOSE 3000
-
 CMD ["npm","run","start"]
