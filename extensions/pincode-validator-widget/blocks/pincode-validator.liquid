@@ -1,6 +1,6 @@
 <div class="pv-wrap"
   data-pv-shop="{{ shop.permanent_domain }}"
-  data-pv-endpoint="{{ block.settings.endpoint_base | escape }}"
+  data-pv-endpoint="https://pincode-validator-pro.onrender.com"
 >
   {% if block.settings.title != blank %}
     <p class="pv-title">{{ block.settings.title }}</p>
@@ -178,12 +178,7 @@
   "name": "Pincode Validator",
   "target": "section",
   "settings": [
-    {
-  "type": "text",
-  "id": "endpoint_base",
-  "label": "Backend base URL (dev tunnel)",
-  "default": "https://example.com"
-},
+   
     {
       "type": "text",
       "id": "title",
