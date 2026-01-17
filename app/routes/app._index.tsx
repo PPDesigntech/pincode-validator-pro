@@ -1,254 +1,213 @@
-import { useEffect } from "react";
-import type {
-  ActionFunctionArgs,
-  HeadersFunction,
-  LoaderFunctionArgs,
-} from "react-router";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useMemo } from "react";
+import type { LoaderFunctionArgs } from "react-router";
+import { useLoaderData, Link } from "react-router";
+import { json } from "@remix-run/node";
+
 import { authenticate } from "../shopify.server";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import db from "../db.server";
+
+type LoaderData = {
+  shop: string;
+  totalRules: number;
+  deliverableCount: number;
+  blockedCount: number;
+  lastUpdatedAt: string | null;
+};
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
-  return null;
+  const rules = await db.pincodeRule.findMany({
+    where: { shop: session.shop },
+    select: { deliverable: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const totalRules = rules.length;
+  const deliverableCount = rules.filter((r) => r.deliverable).length;
+  const blockedCount = totalRules - deliverableCount;
+  const lastUpdatedAt = rules[0]?.createdAt ? new Date(rules[0].createdAt).toISOString() : null;
+
+  return json<LoaderData>({
+    shop: session.shop,
+    totalRules,
+    deliverableCount,
+    blockedCount,
+    lastUpdatedAt,
+  });
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
+export default function AppHome() {
+  const data = useLoaderData<LoaderData>();
 
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
-};
-
-export default function Index() {
-  const fetcher = useFetcher<typeof action>();
-
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const lastUpdatedText = useMemo(() => {
+    if (!data.lastUpdatedAt) return "—";
+    const d = new Date(data.lastUpdatedAt);
+    return d.toLocaleString();
+  }, [data.lastUpdatedAt]);
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
+    <s-page heading="Pincode Validator Pro" subtitle={`Store: ${data.shop}`}>
+      {/* Top cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 16 }}>
+        <s-card>
+          <s-stack gap="400">
+            <div>
+              <s-heading>Quick setup</s-heading>
+              <s-text tone="subdued">
+                Add the widget to your theme, then create rules to control delivery availability.
+              </s-text>
+            </div>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
+            <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
+              <li>
+                Theme editor → <b>App embeds</b> → Enable <b>Pincode Validator</b> → Save
+              </li>
+              <li>
+                Add rules in <b>Pincodes</b> (global rules) or upload CSV
+              </li>
+              <li>
+                Test on product page using a pincode
+              </li>
+            </ol>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Link to="/app/pincodes" style={btnPrimary}>
+                Manage rules
+              </Link>
+              <Link to="/app/settings" style={btnSecondary}>
+                Settings
+              </Link>
+              <a
+                href="https://help.shopify.com/en/manual/online-store/themes/theme-structure/theme-editor/app-embeds"
+                target="_blank"
+                rel="noreferrer"
+                style={btnSecondary}
               >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
+                How to enable app embed
+              </a>
+            </div>
+          </s-stack>
+        </s-card>
 
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
-        )}
-      </s-section>
+        <s-card>
+          <s-stack gap="400">
+            <s-heading>Rule snapshot</s-heading>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
+            <div style={statGrid}>
+              <div style={statBox}>
+                <div style={statLabel}>Total rules</div>
+                <div style={statValue}>{data.totalRules}</div>
+              </div>
+              <div style={statBox}>
+                <div style={statLabel}>Deliverable</div>
+                <div style={statValue}>{data.deliverableCount}</div>
+              </div>
+              <div style={statBox}>
+                <div style={statLabel}>Blocked</div>
+                <div style={statValue}>{data.blockedCount}</div>
+              </div>
+              <div style={statBox}>
+                <div style={statLabel}>Last updated</div>
+                <div style={{ ...statValue, fontSize: 14 }}>{lastUpdatedText}</div>
+              </div>
+            </div>
 
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
+            <s-banner tone={data.totalRules ? "success" : "warning"}>
+              <s-paragraph>
+                {data.totalRules
+                  ? "✅ Rules are configured. Next: enable restriction features and product/collection rules."
+                  : "⚠️ No rules found. Add at least 1 rule or upload a CSV to start validating pincodes."}
+              </s-paragraph>
+            </s-banner>
+          </s-stack>
+        </s-card>
+      </div>
+
+      {/* Bottom section */}
+      <div style={{ marginTop: 16 }}>
+        <s-section heading="What do you want to do next?">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+            <s-card>
+              <s-stack gap="300">
+                <s-heading>Bulk upload pincodes</s-heading>
+                <s-text tone="subdued">Upload a CSV to add or update rules in seconds.</s-text>
+                <Link to="/app/pincodes" style={btnPrimary}>
+                  Upload CSV
+                </Link>
+              </s-stack>
+            </s-card>
+
+            <s-card>
+              <s-stack gap="300">
+                <s-heading>Restrict Add to Cart</s-heading>
+                <s-text tone="subdued">
+                  Disable Add to Cart / Checkout when the pincode is not deliverable.
+                </s-text>
+                <Link to="/app/settings" style={btnPrimary}>
+                  Configure restriction
+                </Link>
+              </s-stack>
+            </s-card>
+
+            <s-card>
+              <s-stack gap="300">
+                <s-heading>Product/collection rules</s-heading>
+                <s-text tone="subdued">
+                  Apply different delivery rules for specific products or collections.
+                </s-text>
+                <Link to="/app/rules" style={btnPrimary}>
+                  Create advanced rules
+                </Link>
+              </s-stack>
+            </s-card>
+          </div>
+        </s-section>
+      </div>
     </s-page>
   );
 }
 
-export const headers: HeadersFunction = (headersArgs) => {
-  return boundary.headers(headersArgs);
+/* --- inline styles (match your current style approach) --- */
+const btnPrimary: React.CSSProperties = {
+  display: "inline-block",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,.15)",
+  background: "black",
+  color: "white",
+  textDecoration: "none",
+};
+
+const btnSecondary: React.CSSProperties = {
+  display: "inline-block",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,.15)",
+  background: "white",
+  color: "black",
+  textDecoration: "none",
+};
+
+const statGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, 1fr)",
+  gap: 12,
+};
+
+const statBox: React.CSSProperties = {
+  border: "1px solid rgba(0,0,0,.12)",
+  borderRadius: 12,
+  padding: 12,
+};
+
+const statLabel: React.CSSProperties = {
+  fontSize: 12,
+  opacity: 0.7,
+  marginBottom: 6,
+};
+
+const statValue: React.CSSProperties = {
+  fontSize: 22,
+  fontWeight: 700,
 };
