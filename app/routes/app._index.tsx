@@ -6,6 +6,22 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      "s-page": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-card": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-stack": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-text": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-heading": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-banner": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-paragraph": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      "s-section": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+    }
+  }
+}
+
 type LoaderData = {
   shop: string;
   totalRules: number;
@@ -47,14 +63,15 @@ export default function AppHome() {
   }, [data.lastUpdatedAt]);
 
   return (
-    <s-page heading="Pincode Validator Pro" subtitle={`Store: ${data.shop}`}>
+    <s-page heading="Pincode Validator Pro">
+  <s-text tone="neutral">Store: {data.shop}</s-text>
       {/* Top cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 16 }}>
         <s-card>
-          <s-stack gap="400">
+          <s-stack gap="large">
             <div>
               <s-heading>Quick setup</s-heading>
-              <s-text tone="subdued">
+              <s-text tone="neutral">
                 Add the widget to your theme, then create rules to control delivery availability.
               </s-text>
             </div>
@@ -91,7 +108,7 @@ export default function AppHome() {
         </s-card>
 
         <s-card>
-          <s-stack gap="400">
+          <s-stack gap="large">
             <s-heading>Rule snapshot</s-heading>
 
             <div style={statGrid}>
@@ -129,9 +146,9 @@ export default function AppHome() {
         <s-section heading="What do you want to do next?">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
             <s-card>
-              <s-stack gap="300">
+              <s-stack gap="small">
                 <s-heading>Bulk upload pincodes</s-heading>
-                <s-text tone="subdued">Upload a CSV to add or update rules in seconds.</s-text>
+                <s-text tone="neutral">Upload a CSV to add or update rules in seconds.</s-text>
                 <Link to="/app/pincodes" style={btnPrimary}>
                   Upload CSV
                 </Link>
@@ -139,9 +156,9 @@ export default function AppHome() {
             </s-card>
 
             <s-card>
-              <s-stack gap="300">
+              <s-stack gap="small">
                 <s-heading>Restrict Add to Cart</s-heading>
-                <s-text tone="subdued">
+                <s-text tone="neutral">
                   Disable Add to Cart / Checkout when the pincode is not deliverable.
                 </s-text>
                 <Link to="/app/settings" style={btnPrimary}>
@@ -151,9 +168,9 @@ export default function AppHome() {
             </s-card>
 
             <s-card>
-              <s-stack gap="300">
+              <s-stack gap="small">
                 <s-heading>Product/collection rules</s-heading>
-                <s-text tone="subdued">
+                <s-text tone="neutral">
                   Apply different delivery rules for specific products or collections.
                 </s-text>
                 <Link to="/app/rules" style={btnPrimary}>
